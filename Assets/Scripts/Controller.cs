@@ -15,12 +15,17 @@ public class Controller : MonoBehaviour
     private TcpClient m_tcpClientControl;
     private TcpClient m_tcpClientCamFeed;
     private NetworkStream m_controlStream;
+    private Socket m_camClient;
     private NetworkStream m_camStream;
     private bool m_controlMode;
     private float m_refreshDelay;
     private float m_time;
     public float refreshRate = 10;
-
+    byte[] buffer = new byte[IMAGE_BUFFER_SIZE];
+    private bool m_isDirty;
+    private int m_currBufferPos;
+    private bool m_lookForStart;
+    private byte[] m_currBytes;
     public const int IMAGE_BUFFER_SIZE = 1024 * 1024 * 5; //5Mo buffer
 
     // Start is called before the first frame update
@@ -43,7 +48,7 @@ public class Controller : MonoBehaviour
     {
         if (m_controlMode)
         {
-            if(!m_tcpClientControl.Connected)
+            if (!m_tcpClientControl.Connected)
             {
                 m_tcpClientControl = null;
                 SetConnected(false);
@@ -56,8 +61,19 @@ public class Controller : MonoBehaviour
                 m_time -= m_refreshDelay;
                 Refresh();
             }
+
+            if (m_isDirty)
+            {
+                m_isDirty = false;
+                Texture2D tex = new Texture2D(1, 1);
+                if (tex.LoadImage(m_currBytes))
+                {
+                    if (tex.width > 16 && tex.height > 16) //Remove corrupted images
+                        controlPanel.SetTex(tex);
+                }
+            }
         }
-      
+
     }
 
     private void Refresh()
@@ -127,6 +143,11 @@ public class Controller : MonoBehaviour
         SetConnected(false);
     }
 
+    private void OnDestroy()
+    {
+        Disconnect();
+    }
+
 
 
 
@@ -144,9 +165,15 @@ public class Controller : MonoBehaviour
                 Debug.Log("Connected");
                 SetConnected(true);
                 m_controlStream = m_tcpClientControl.GetStream();
+                m_camClient = m_tcpClientCamFeed.Client;
                 m_camStream = m_tcpClientCamFeed.GetStream();
                 Thread t = new Thread(RecieveThread);
                 t.Start();
+
+
+                m_lookForStart = true;
+                buffer = new byte[IMAGE_BUFFER_SIZE];
+                m_currBufferPos = 0;
             }
             else
             {
@@ -163,19 +190,23 @@ public class Controller : MonoBehaviour
     {
         while (m_tcpClientCamFeed.Connected)
         {
-            byte[] buffer = new byte[IMAGE_BUFFER_SIZE];
-            int bytesRead = m_camStream.Read(buffer, 0, IMAGE_BUFFER_SIZE);
-            if (bytesRead > 0)
+            Thread.Sleep(45);
+            if (m_camStream.CanRead)
             {
-                byte[] imgBytes = new byte[bytesRead];
-                Array.Copy(buffer, imgBytes, bytesRead);
-                Texture2D tex = new Texture2D(1,1);
-                if (tex.LoadImage(imgBytes))
-                {
+                byte[] tempBuffer = new byte[IMAGE_BUFFER_SIZE];
+                m_camStream.ReadTimeout = 2000;
+                bool working = true;
+                var requestObj = new object();
+                int bytesRead = m_camStream.Read(tempBuffer, 0, IMAGE_BUFFER_SIZE);
 
-                }
+                Debug.Log("Recieved " + bytesRead + " bytes");
 
+                m_currBytes = new byte[bytesRead];
+                Array.Copy(tempBuffer, m_currBytes, bytesRead);
+                m_isDirty = true;
             }
+
         }
     }
+
 }
