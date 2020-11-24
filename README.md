@@ -7,3 +7,5 @@ There should be two servers ready for communication with the application:
 
 * A recieve server interpreting input data and transmitting it to the drone (port X - ex:6789)
 * A send server transmitting camera-feedback encoded in jpg (port X+1 - ex:6790)
+
+![](drone_unity.gif)
